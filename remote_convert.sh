@@ -22,9 +22,9 @@ while read -r remote_file; do
 
     remote_log="$(dirname "$remote_file")/.converted"
     if ssh -nq "$remote" "test -e \"$remote_log\""; then
-        if ssh -n "$remote" "cat \"$remote_log\" | grep -qx \"$remote_file\""; then
+        if ssh -n "$remote" "cat \"$remote_log\" | grep -qxF \"$remote_file\""; then
             log "Already attempted to convert: $remote_file"
-            log "Skipping..."
+            echo
             continue
         fi
     fi
@@ -37,6 +37,7 @@ while read -r remote_file; do
 
     log "Started converting: $local_file"
 
+        # --preset 'Fast 1080p30' \
     HandBrakeCLI \
         -i "$local_file" \
         -o "$dest" \
@@ -45,7 +46,7 @@ while read -r remote_file; do
         --maxWidth 3840 \
         --all-audio \
         --all-subtitles \
-        -x threads=8 \
+        -x threads=16 \
         --verbose=1 < /dev/null
     log "Ended converting: $local_file"
 
@@ -68,7 +69,6 @@ while read -r remote_file; do
 
     rm "$local_file" "$dest"
     log "Deleted local files"
-    log
-    log
+    echo
 
 done < <(ssh "$remote" "find \"$folder\" -type f -name '*.mkv'" | sort)
