@@ -46,7 +46,7 @@ while read -r remote_file; do
         --maxWidth 3840 \
         --all-audio \
         --all-subtitles \
-        -x threads=16 \
+        -x threads="$(nproc)" \
         --verbose=1 < /dev/null
     log "Ended converting: $local_file"
 
