@@ -2,6 +2,10 @@
 
 set -e
 
+[[ "$#" -ne 2 ]] &&
+    echo "USAGE: remote_convert REMOTE REMOTE_DIR" &&
+    exit
+
 remote="$1"
 folder="$2"
 
@@ -17,17 +21,20 @@ size(){
     du -h "$1" | awk '{ print $1}'
 }
 
-while read -r remote_file; do
-    local_file="$(basename "$remote_file")"
+prev_compressions="$(ssh "$remote" "find $folder -type f -name .converted -exec cat {} \;" | sort)"
+curr_compression_targets="$(ssh "$remote" "find \"$folder\" -type f -name '*.mkv'" | sort)"
 
-    remote_log="$(dirname "$remote_file")/.converted"
-    if ssh -nq "$remote" "test -e \"$remote_log\""; then
-        if ssh -n "$remote" "cat \"$remote_log\" | grep -qxF \"$remote_file\""; then
-            log "Already attempted to convert: $remote_file"
-            echo
-            continue
-        fi
-    fi
+log "Previous failed attempts: $(comm -12 <(echo "$prev_compressions") <(echo "$curr_compression_targets") | wc -l)"
+log "Previous successfull attempts: $(comm -13 <(echo "$curr_compression_targets") <(echo "$prev_compressions") | wc -l)"
+
+
+readarray -t new_compression_targets < <(comm -13 <(echo "$prev_compressions") <(echo "$curr_compression_targets"))
+
+log "Current compression targets: ${#new_compression_targets[@]}"
+
+
+for remote_file in "${new_compression_targets[@]}"; do
+    local_file="$(basename "$remote_file")"
 
     log "Started fetching: $remote_file"
     rsync -av --progress "$remote":"$remote_file" .
@@ -48,6 +55,7 @@ while read -r remote_file; do
         --all-subtitles \
         -x threads="$(nproc)" \
         --verbose=1 < /dev/null
+
     log "Ended converting: $local_file"
 
     log "Size $(size "$local_file") -> $(size "$dest")"
@@ -65,10 +73,11 @@ while read -r remote_file; do
         log "Compression did not compress"
     fi
 
+    remote_log="$(dirname "$remote_file")/.converted"
     ssh -n "$remote" "echo \"$remote_file\" >> \"$remote_log\""
 
     rm "$local_file" "$dest"
     log "Deleted local files"
     echo
 
-done < <(ssh "$remote" "find \"$folder\" -type f -name '*.mkv'" | sort)
+done
