@@ -34,20 +34,21 @@ log "Current compression targets: ${#new_compression_targets[@]}"
 
 
 for remote_file in "${new_compression_targets[@]}"; do
-    local_file="$(basename "$remote_file")"
+    remote_folder="$(dirname "$remote_file")"
+
+    filename="$(basename "$remote_file")"
 
     log "Started fetching: $remote_file"
     rsync -av --progress "$remote":"$remote_file" .
     log "Ended fetching: $remote_file"
 
-    dest="${local_file%.mkv}.mp4"
+    tmp_filename="tmp_${filename}"
 
-    log "Started converting: $local_file"
+    log "Started converting: $filename"
 
-        # --preset 'Fast 1080p30' \
     HandBrakeCLI \
-        -i "$local_file" \
-        -o "$dest" \
+        -i "$filename" \
+        -o "$tmp_filename" \
         --preset 'HQ 1080p30 Surround' \
         --maxHeight 2160 \
         --maxWidth 3840 \
@@ -56,19 +57,21 @@ for remote_file in "${new_compression_targets[@]}"; do
         -x threads="$(nproc)" \
         --verbose=1 < /dev/null
 
-    log "Ended converting: $local_file"
+    log "Ended converting: $filename"
 
-    log "Size $(size "$local_file") -> $(size "$dest")"
+    log "Size $(size "$filename") -> $(size "$tmp_filename")"
 
-    if [[ "$(stat -c '%s' "$dest")" -lt "$(stat -c '%s' "$local_file")" ]]; then
+    if [[ "$(stat -c '%s' "$tmp_filename")" -lt "$(stat -c '%s' "$filename")" ]]; then
         log "Compression was a success"
 
-        log "Start Copying compressed to remote"
-        rsync -av --progress "$dest" "$remote":"$(dirname "$remote_file")"
-        log "Ended Copying compressed to remote"
+        log "Start Copying temporary compressed to remote"
+        rsync -av --progress "${tmp_filename}" "${remote}:${remote_folder}"
+        log "Ended Copying temporary compressed to remote"
 
-        ssh -n "$remote" rm \""$remote_file"\"
-        log "Removed uncompressed on remote: $remote_file"
+        ssh -n "$remote" rm -v \""$remote_file"\"
+        ssh -n "$remote" mv -v \""${remote_folder}/${tmp_filename}"\" \""$remote_file"\"
+
+        log "Replaced uncompressed on remote: $remote_file"
     else
         log "Compression did not compress"
     fi
@@ -76,7 +79,7 @@ for remote_file in "${new_compression_targets[@]}"; do
     remote_log="$(dirname "$remote_file")/.converted"
     ssh -n "$remote" "echo \"$remote_file\" >> \"$remote_log\""
 
-    rm "$local_file" "$dest"
+    rm "$filename" "$tmp_filename"
     log "Deleted local files"
     echo
 
